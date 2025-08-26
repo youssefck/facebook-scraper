@@ -1,0 +1,7 @@
+{
+  "error": "Search failed",
+  "message": "404 Client Error: Not Found for url: https://www.facebook.com/search/posts?q=inwi.ma&_rdr",
+  "error_type": "HTTPError",
+  "keyword": "inwi.ma",
+  "partial_results": 0
+}
