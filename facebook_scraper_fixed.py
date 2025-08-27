@@ -4,7 +4,6 @@ import time
 import os
 import re
 from typing import Dict, List, Optional, Tuple
-import re
 from datetime import datetime, timezone
 
 try:
@@ -36,7 +35,11 @@ DOC_ID_POSTS_SEARCH = "24197523603262205"  # Global search posts query
 
 # Debug/behavior toggles
 STOP_AFTER_FIRST_PAGE = False
-VERBOSE_LOG = True
+VERBOSE_LOG = False
+
+def _log(message: str) -> None:
+    if VERBOSE_LOG:
+        print(message)
 
 def _decode_possible_prefixed_json(text: str) -> Optional[Dict]:
     """Decode JSON that might have prefixes like 'for (;;);' or be JSONL.
@@ -103,7 +106,7 @@ def _extract_created_time(story: Dict) -> Optional[str]:
     if not story:
         return None
     
-    print(f"🔍 Searching for creation_time in story with keys: {list(story.keys())[:15]}")  # DEBUG
+    _log(f"🔍 Searching for creation_time in story with keys: {list(story.keys())[:15]}")
     
     # Primary paths based on actual Facebook response structure
     primary_paths = [
@@ -134,20 +137,20 @@ def _extract_created_time(story: Dict) -> Optional[str]:
                 current = current[key]
             if current:
                 timestamp = str(current)
-                print(f"✅ Found timestamp: {timestamp} at path: {' -> '.join(map(str, path))}")  # DEBUG
+                _log(f"✅ Found timestamp: {timestamp} at path: {' -> '.join(map(str, path))}")
                 # Convert Unix timestamp to ISO format
                 if timestamp.isdigit():
                     ts = int(timestamp)
                     if ts > 10_000_000_000:  # milliseconds
                         ts = ts // 1000
                     converted = _format_iso_z(datetime.fromtimestamp(ts, tz=timezone.utc))
-                    print(f"🔄 Converted {timestamp} -> {converted}")  # DEBUG
+                    _log(f"🔄 Converted {timestamp} -> {converted}")
                     return converted
                 return timestamp
         except (KeyError, TypeError, IndexError):
             continue
     
-    print(f"❌ No creation_time found in story")  # DEBUG
+    _log(f"❌ No creation_time found in story")
     return None
 
 def _extract_author(story: Dict) -> Optional[Dict]:
@@ -212,32 +215,45 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
         # Prefer HTML
         headers.pop('Content-Type', None)
         headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        # Try alternative hosts for better HTML
-        candidate_urls = [url]
+        # Step 1: Resolve to the final URL by following redirects
         try:
-            if 'web.facebook.com' in url:
-                candidate_urls.append(url.replace('web.facebook.com', 'www.facebook.com'))
-                candidate_urls.append(url.replace('web.facebook.com', 'm.facebook.com'))
-            elif 'www.facebook.com' in url:
-                candidate_urls.append(url.replace('www.facebook.com', 'm.facebook.com'))
-            elif 'm.facebook.com' in url:
-                candidate_urls.append(url.replace('m.facebook.com', 'www.facebook.com'))
+            first = session.get(url, headers=headers, allow_redirects=True, timeout=20)
+            final_url = first.url
         except Exception:
-            pass
-
-        html = ''
-        for test_url in candidate_urls:
-            try:
-                resp = session.get(test_url, headers=headers, timeout=20)
-                if not resp.encoding:
-                    resp.encoding = 'utf-8'
-                html = resp.text or ''
-                if html:
-                    break
-            except Exception:
-                continue
+            final_url = url
+        # Step 2: Re-fetch the final URL to get the definitive HTML
+        try:
+            resp = session.get(final_url, headers=headers, timeout=20)
+            if not resp.encoding:
+                resp.encoding = 'utf-8'
+            html = resp.text or ''
+        except Exception:
+            html = ''
         if not html:
-            return None
+            # Try alternative hosts for better HTML as a fallback
+            candidate_urls = [url]
+            try:
+                if 'web.facebook.com' in url:
+                    candidate_urls.append(url.replace('web.facebook.com', 'www.facebook.com'))
+                    candidate_urls.append(url.replace('web.facebook.com', 'm.facebook.com'))
+                elif 'www.facebook.com' in url:
+                    candidate_urls.append(url.replace('www.facebook.com', 'm.facebook.com'))
+                elif 'm.facebook.com' in url:
+                    candidate_urls.append(url.replace('m.facebook.com', 'www.facebook.com'))
+            except Exception:
+                pass
+            for test_url in candidate_urls:
+                try:
+                    resp2 = session.get(test_url, headers=headers, allow_redirects=True, timeout=20)
+                    if not resp2.encoding:
+                        resp2.encoding = 'utf-8'
+                    html = resp2.text or ''
+                    if html:
+                        break
+                except Exception:
+                    continue
+            if not html:
+                return None
         # 1) data-utime (unix seconds)
         m = re.search(r'data-utime="(\d{10,13})"', html)
         if m:
@@ -245,7 +261,7 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
             if ts > 10_000_000_000:  # milliseconds
                 ts = ts // 1000
             converted = _format_iso_z(datetime.fromtimestamp(ts, tz=timezone.utc))
-            print(f"🔄 HTML fallback found: {ts} -> {converted}")  # DEBUG
+            _log(f"🔄 HTML fallback found: {ts} -> {converted}")
             return converted
         # 2) ISO in meta tags
         m = re.search(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)', html)
@@ -262,13 +278,31 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
             if ts > 10_000_000_000:
                 ts = ts // 1000
             return _format_iso_z(datetime.fromtimestamp(ts, tz=timezone.utc))
-        # 4) Tooltip textual date, e.g., "Thursday 27 October 2022 at 23:20"
-        m = re.search(r'([A-Za-z]+day\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}\s+at\s+\d{1,2}:\d{2})', html)
+        # 4) Tooltip textual date, e.g., "Wednesday, July 16, 2025 at 8:01 PM"
+        # Normalize spaces (handle narrow no-break spaces, etc.)
+        normalized_html = html.replace('\u202f', ' ').replace('\xa0', ' ')
+        # Try US-style tooltip with weekday, month name, day, year, 12h time with AM/PM
+        m = re.search(r'>\s*([A-Za-z]+day,?\s+[A-Za-z]+\s+\d{1,2},?\s+\d{4}\s+at\s+\d{1,2}:\d{2}\s*(?:AM|PM))\s*<', normalized_html)
+        if m:
+            text = m.group(1).strip()
+            for fmt in ('%A, %B %d, %Y at %I:%M %p', '%A %B %d, %Y at %I:%M %p', '%A, %B %d %Y at %I:%M %p'):
+                try:
+                    # Interpret as local time and return ISO string in local timezone
+                    local_tz = datetime.now().astimezone().tzinfo
+                    naive = datetime.strptime(text, fmt)
+                    local_dt = naive.replace(tzinfo=local_tz)
+                    return local_dt.isoformat()
+                except Exception:
+                    continue
+        # 5) European-style tooltip used earlier, e.g., "Thursday 27 October 2022 at 23:20"
+        m = re.search(r'([A-Za-z]+day\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}\s+at\s+\d{1,2}:\d{2})', normalized_html)
         if m:
             text = m.group(1)
             try:
-                dt = datetime.strptime(text, '%A %d %B %Y at %H:%M').replace(tzinfo=timezone.utc)
-                return _format_iso_z(dt)
+                local_tz = datetime.now().astimezone().tzinfo
+                naive = datetime.strptime(text, '%A %d %B %Y at %H:%M')
+                local_dt = naive.replace(tzinfo=local_tz)
+                return local_dt.isoformat()
             except Exception:
                 pass
     except Exception:
@@ -315,18 +349,18 @@ def _extract_post_from_edge(edge: Dict) -> Optional[Dict]:
                 except (KeyError, TypeError):
                     continue
         if not story:
-            print("❌ No story found in edge")  # DEBUG
+            _log("❌ No story found in edge")
             return None
         post_id = story.get("post_id") or story.get("id")
         if not post_id:
-            print("❌ No post_id found")  # DEBUG
+            _log("❌ No post_id found")
             return None
         message = _extract_message_from_story(story)
         if not message:
-            print("❌ No message found")  # DEBUG
+            _log("❌ No message found")
             return None
         
-        print(f"📝 Processing post: {post_id}")  # DEBUG
+        _log(f"📝 Processing post: {post_id}")
         created_time = _extract_created_time(story)
         author = _extract_author(story)
         permalink = _extract_permalink(story)
@@ -450,34 +484,36 @@ def fetch_posts(keyword, max_pages=30, page_size=5, delay_seconds=1.0, target_po
                     print("🔁 Rotating account due to rate limit/block...")
                 account = sm.next_account()
                 if not account:
-                    print("No more accounts to rotate to.")
+                    _log("No more accounts to rotate to.")
                     break
                 session, session_headers, session_data = account
                 tokens = SessionManager.extract_tokens(session_data)
                 fb_dtsg = tokens.get('fb_dtsg') or DEFAULT_FB_DTSG
                 resp, _ = with_backoff(_send, max_attempts=3, base_delay=2.0)
                 if resp is None:
-                    print("Rate limit persists after rotation; stopping.")
+                    _log("Rate limit persists after rotation; stopping.")
                     break
 
             # Ensure proper decoding if server omits charset
             if not resp.encoding:
                 resp.encoding = "utf-8"
-            if VERBOSE_LOG:
-                print(f"Page {page + 1} - Status: {resp.status_code}, Length: {len(resp.text)} chars")
+            _log(f"Page {page + 1} - Status: {resp.status_code}, Length: {len(resp.text)} chars")
             if resp.status_code != 200:
-                print(f"Error: HTTP {resp.status_code}")
+                _log(f"Error: HTTP {resp.status_code}")
                 break
 
             if page == 0:
                 raw_path = f"response_page_{page + 1}.json"
-                with open(raw_path, "w", encoding="utf-8") as f:
-                    f.write(resp.text)
-                print(f"Saved raw response to {raw_path} ({len(resp.text)} bytes)")
+                try:
+                    with open(raw_path, "w", encoding="utf-8") as f:
+                        f.write(resp.text)
+                    _log(f"Saved raw response to {raw_path} ({len(resp.text)} bytes)")
+                except Exception as _e:
+                    _log(f"Skipping raw response save: {_e}")
 
             obj = _decode_possible_prefixed_json(resp.text)
             if not isinstance(obj, dict):
-                print("No JSON object found in response")
+                _log("No JSON object found in response")
                 break
 
             if page == 0:
@@ -488,21 +524,20 @@ def fetch_posts(keyword, max_pages=30, page_size=5, delay_seconds=1.0, target_po
                         sanitized = {k: v for k, v in sanitized.items() if k != 'extensions'}
                     with open(parsed_path, "w", encoding="utf-8") as f:
                         json.dump(sanitized, f, indent=2, ensure_ascii=False)
-                    print(f"Saved parsed JSON to {parsed_path}")
+                    _log(f"Saved parsed JSON to {parsed_path}")
                 except Exception as e:
-                    print(f"Error saving parsed JSON: {e}")
+                    _log(f"Error saving parsed JSON: {e}")
             # Log GraphQL errors if any
             if isinstance(obj, dict) and isinstance(obj.get('errors'), list) and obj['errors']:
                 msgs = [str(err.get('message', '')) for err in obj['errors'][:5]]
-                print(f"GraphQL errors: {msgs}")
+                _log(f"GraphQL errors: {msgs}")
 
             data_root = obj.get("data", {})
             serp = data_root.get("serpResponse", {})
             results = serp.get("results", {})
             edges = results.get("edges", [])
 
-            if VERBOSE_LOG:
-                print(f"Edges found: {len(edges)}")
+            _log(f"Edges found: {len(edges)}")
 
             page_posts = []
             for edge in edges:
@@ -510,7 +545,7 @@ def fetch_posts(keyword, max_pages=30, page_size=5, delay_seconds=1.0, target_po
                 if post and post.get("message"):
                     # Fallback created_time via HTML if missing
                     if not post.get("created_time"):
-                        print(f"🔄 Trying HTML fallback for post {post['id']}")  # DEBUG
+                        _log(f"🔄 Trying HTML fallback for post {post['id']}")
                         post["created_time"] = _fallback_fetch_created_time(session, post.get("permalink"))
                     # Ensure ISO Z format if it looks like epoch
                     if post.get("created_time") and isinstance(post["created_time"], (int, float, str)):
@@ -528,7 +563,7 @@ def fetch_posts(keyword, max_pages=30, page_size=5, delay_seconds=1.0, target_po
                         post["search_keyword"] = keyword
                         post["page"] = page + 1
                         page_posts.append(post)
-                        print(f"✅ Added post {post['id']} with creation_time: {post.get('created_time', 'None')}")  # DEBUG
+                        _log(f"✅ Added post {post['id']} with creation_time: {post.get('created_time', 'None')}")
 
             if page_posts:
                 posts.extend(page_posts)
@@ -536,24 +571,27 @@ def fetch_posts(keyword, max_pages=30, page_size=5, delay_seconds=1.0, target_po
                 with open(page_out, "w", encoding="utf-8") as f:
                     for post in page_posts:
                         f.write(json.dumps(post, ensure_ascii=False) + "\n")
-                with open("posts.jsonl", "a", encoding="utf-8") as f:
-                    for post in page_posts:
-                        f.write(json.dumps(post, ensure_ascii=False) + "\n")
-                print(f"Saved {len(page_posts)} posts to {page_out} and appended to posts.jsonl")
-                print(f"📊 Total posts so far: {len(posts)}")
+                try:
+                    with open("posts.jsonl", "a", encoding="utf-8") as f:
+                        for post in page_posts:
+                            f.write(json.dumps(post, ensure_ascii=False) + "\n")
+                except Exception as _e:
+                    _log(f"Skipping append to posts.jsonl: {_e}")
+                _log(f"Saved {len(page_posts)} posts to {page_out} and appended to posts.jsonl")
+                _log(f"📊 Total posts so far: {len(posts)}")
                 
                 # DEBUG: Check creation_time coverage
                 posts_with_time = sum(1 for p in page_posts if p.get('created_time'))
-                print(f"📅 Posts with creation_time this page: {posts_with_time}/{len(page_posts)}")
+                _log(f"📅 Posts with creation_time this page: {posts_with_time}/{len(page_posts)}")
                 
                 if len(posts) >= target_posts:
-                    print(f"🎯 Reached target of {target_posts} posts! Stopping pagination.")
+                    _log(f"🎯 Reached target of {target_posts} posts! Stopping pagination.")
                     break
             else:
-                print("No new posts found on this page")
+                _log("No new posts found on this page")
                 # If first page is empty and we had a saved cursor, clear it and retry once from scratch
                 if page == 0 and state.get("last_cursor") and retry_cleared_cursor:
-                    print("Clearing saved cursor and retrying from the beginning...")
+                    _log("Clearing saved cursor and retrying from the beginning...")
                     cursor = None
                     save_progress(keyword, None, len(posts))
                     retry_cleared_cursor = False
@@ -581,10 +619,10 @@ def fetch_posts(keyword, max_pages=30, page_size=5, delay_seconds=1.0, target_po
                 next_cursor = _find_cursor_any(obj)
 
             if not has_next and not next_cursor:
-                print("✅ No more pages available (reached end)")
+                _log("✅ No more pages available (reached end)")
                 break
             if not next_cursor:
-                print("⚠️ No cursor found for next page")
+                _log("⚠️ No cursor found for next page")
                 break
 
             cursor = next_cursor
@@ -592,7 +630,7 @@ def fetch_posts(keyword, max_pages=30, page_size=5, delay_seconds=1.0, target_po
             save_progress(keyword, cursor, len(posts))
 
             if STOP_AFTER_FIRST_PAGE:
-                print("STOP_AFTER_FIRST_PAGE is True — exiting after saving first response.")
+                _log("STOP_AFTER_FIRST_PAGE is True — exiting after saving first response.")
                 break
             time.sleep(delay_seconds)
 
