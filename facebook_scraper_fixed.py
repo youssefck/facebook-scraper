@@ -303,25 +303,56 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
             iso = _format_iso_z(datetime.fromtimestamp(ts, tz=timezone.utc))
             _log(f"🕒 Extracted creation time via publish_time: {ts} -> {iso}")
             return iso
-        # 4) Tooltip textual date, e.g., "Wednesday, July 16, 2025 at 8:01 PM"
-        # Normalize spaces (handle narrow no-break spaces, etc.)
+        # 4) Tooltip textual date, use BeautifulSoup to locate the tooltip span
+        try:
+            from bs4 import BeautifulSoup  # optional dependency
+            soup = BeautifulSoup(html, 'html.parser')
+            tooltips = soup.select('div[role="tooltip"] span')
+            _log(f"🔎 Tooltip spans found: {len(tooltips)}")
+            for idx, span in enumerate(tooltips[:5]):
+                _log(f"   • tooltip[{idx}]: '{span.get_text(strip=True)}'")
+            for span in tooltips:
+                raw_text = span.get_text(" ", strip=True)
+                text = raw_text.replace('\u202f', ' ').replace('\xa0', ' ').strip()
+                # Try US-style first: Monday, October 21, 2024 at 8:14 AM
+                for fmt in ('%A, %B %d, %Y at %I:%M %p', '%A %B %d, %Y at %I:%M %p', '%A, %B %d %Y at %I:%M %p'):
+                    try:
+                        local_tz = datetime.now().astimezone().tzinfo
+                        naive = datetime.strptime(text, fmt)
+                        local_dt = naive.replace(tzinfo=local_tz)
+                        iso = local_dt.isoformat()
+                        _log(f"🕒 Extracted creation time via tooltip (BeautifulSoup US): '{text}' -> {iso}")
+                        return iso
+                    except Exception:
+                        pass
+                # European-style: Thursday 27 October 2022 at 23:20
+                try:
+                    local_tz = datetime.now().astimezone().tzinfo
+                    naive = datetime.strptime(text, '%A %d %B %Y at %H:%M')
+                    local_dt = naive.replace(tzinfo=local_tz)
+                    iso = local_dt.isoformat()
+                    _log(f"🕒 Extracted creation time via tooltip (BeautifulSoup EU): '{text}' -> {iso}")
+                    return iso
+                except Exception:
+                    continue
+            _log("ℹ️ Tooltip spans present but no parseable date text found")
+        except Exception as e:
+            _log(f"ℹ️ Skipping BeautifulSoup tooltip parsing: {e}")
+        # 5) Regex fallback for tooltip textual date in raw HTML
         normalized_html = html.replace('\u202f', ' ').replace('\xa0', ' ')
-        # Try US-style tooltip with weekday, month name, day, year, 12h time with AM/PM
         m = re.search(r'>\s*([A-Za-z]+day,?\s+[A-Za-z]+\s+\d{1,2},?\s+\d{4}\s+at\s+\d{1,2}:\d{2}\s*(?:AM|PM))\s*<', normalized_html)
         if m:
             text = m.group(1).strip()
             for fmt in ('%A, %B %d, %Y at %I:%M %p', '%A %B %d, %Y at %I:%M %p', '%A, %B %d %Y at %I:%M %p'):
                 try:
-                    # Interpret as local time and return ISO string in local timezone
                     local_tz = datetime.now().astimezone().tzinfo
                     naive = datetime.strptime(text, fmt)
                     local_dt = naive.replace(tzinfo=local_tz)
                     iso = local_dt.isoformat()
-                    _log(f"🕒 Extracted creation time via tooltip (US): '{text}' -> {iso}")
+                    _log(f"🕒 Extracted creation time via tooltip (US regex): '{text}' -> {iso}")
                     return iso
                 except Exception:
                     continue
-        # 5) European-style tooltip used earlier, e.g., "Thursday 27 October 2022 at 23:20"
         m = re.search(r'([A-Za-z]+day\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}\s+at\s+\d{1,2}:\d{2})', normalized_html)
         if m:
             text = m.group(1)
@@ -330,7 +361,7 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
                 naive = datetime.strptime(text, '%A %d %B %Y at %H:%M')
                 local_dt = naive.replace(tzinfo=local_tz)
                 iso = local_dt.isoformat()
-                _log(f"🕒 Extracted creation time via tooltip (EU): '{text}' -> {iso}")
+                _log(f"🕒 Extracted creation time via tooltip (EU regex): '{text}' -> {iso}")
                 return iso
             except Exception:
                 pass
