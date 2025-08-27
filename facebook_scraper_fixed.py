@@ -248,33 +248,8 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
         except Exception:
             html = ''
         if not html:
-            # Try alternative hosts for better HTML as a fallback
-            candidate_urls = [url]
-            try:
-                if 'web.facebook.com' in url:
-                    candidate_urls.append(url.replace('web.facebook.com', 'www.facebook.com'))
-                    candidate_urls.append(url.replace('web.facebook.com', 'm.facebook.com'))
-                elif 'www.facebook.com' in url:
-                    candidate_urls.append(url.replace('www.facebook.com', 'm.facebook.com'))
-                elif 'm.facebook.com' in url:
-                    candidate_urls.append(url.replace('m.facebook.com', 'www.facebook.com'))
-            except Exception:
-                pass
-            for test_url in candidate_urls:
-                try:
-                    _log(f"➡️  Trying alternate host URL: {test_url}")
-                    resp2 = session.get(test_url, headers=headers, allow_redirects=True, timeout=20)
-                    if not resp2.encoding:
-                        resp2.encoding = 'utf-8'
-                    _log(f"⬇️  Alternate host status={resp2.status_code}, final={resp2.url}, length={len(resp2.text)}")
-                    html = resp2.text or ''
-                    if html:
-                        break
-                except Exception as e:
-                    _log(f"⚠️  Alternate host request failed: {e}")
-                    continue
-            if not html:
-                return None
+            _log("⚠️  No HTML received after following redirects; aborting fallback parse")
+            return None
         # 1) data-utime (unix seconds)
         m = re.search(r'data-utime="(\d{10,13})"', html)
         if m:
@@ -307,8 +282,14 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
         try:
             from bs4 import BeautifulSoup  # optional dependency
             soup = BeautifulSoup(html, 'html.parser')
-            tooltips = soup.select('div[role="tooltip"] span')
-            _log(f"🔎 Tooltip spans found: {len(tooltips)}")
+            # Prefer the exact span classes provided by the user
+            exact_selector = 'span.x193iq5w.xeuugli.x13faqbe.x1vvkbs.x10flsy6.x1nxh6w3.x1sibtaa.xo1l8bm.xzsf02u'
+            tooltips = soup.select(exact_selector)
+            _log(f"🔎 Tooltip spans (exact class selector) found: {len(tooltips)}")
+            # Fallback to any tooltip container span if exact class not found
+            if not tooltips:
+                tooltips = soup.select('div[role="tooltip"] span')
+                _log(f"🔎 Tooltip spans (role=tooltip) found: {len(tooltips)}")
             for idx, span in enumerate(tooltips[:5]):
                 _log(f"   • tooltip[{idx}]: '{span.get_text(strip=True)}'")
             for span in tooltips:
