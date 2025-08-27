@@ -215,17 +215,35 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
         # Prefer HTML
         headers.pop('Content-Type', None)
         headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        # Log cookie usage (names only)
+        try:
+            cookie_names = list(session.cookies.get_dict().keys())
+            _log(f"🍪 Using session cookies: {cookie_names}")
+        except Exception:
+            _log("🍪 Using session cookies: <unavailable>")
+        # Normalize obvious host typos in incoming permalink
+        try:
+            if isinstance(url, str) and 'wzww.facebook.com' in url:
+                _log(f"🔧 Normalizing host typo in URL: {url}")
+                url = url.replace('wzww.facebook.com', 'www.facebook.com')
+        except Exception:
+            pass
         # Step 1: Resolve to the final URL by following redirects
         try:
+            _log(f"➡️  Fallback HTML: requesting initial URL (allow_redirects=True): {url}")
             first = session.get(url, headers=headers, allow_redirects=True, timeout=20)
+            _log(f"⬇️  Received status={first.status_code} after redirects; final URL: {first.url}")
             final_url = first.url
-        except Exception:
+        except Exception as e:
+            _log(f"⚠️  Initial request failed ({e}); will use original URL: {url}")
             final_url = url
         # Step 2: Re-fetch the final URL to get the definitive HTML
         try:
+            _log(f"➡️  Fetching final URL HTML (no redirects): {final_url}")
             resp = session.get(final_url, headers=headers, timeout=20)
             if not resp.encoding:
                 resp.encoding = 'utf-8'
+            _log(f"⬇️  Final URL fetch status={resp.status_code}, length={len(resp.text)}")
             html = resp.text or ''
         except Exception:
             html = ''
@@ -244,13 +262,16 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
                 pass
             for test_url in candidate_urls:
                 try:
+                    _log(f"➡️  Trying alternate host URL: {test_url}")
                     resp2 = session.get(test_url, headers=headers, allow_redirects=True, timeout=20)
                     if not resp2.encoding:
                         resp2.encoding = 'utf-8'
+                    _log(f"⬇️  Alternate host status={resp2.status_code}, final={resp2.url}, length={len(resp2.text)}")
                     html = resp2.text or ''
                     if html:
                         break
-                except Exception:
+                except Exception as e:
+                    _log(f"⚠️  Alternate host request failed: {e}")
                     continue
             if not html:
                 return None
@@ -261,14 +282,16 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
             if ts > 10_000_000_000:  # milliseconds
                 ts = ts // 1000
             converted = _format_iso_z(datetime.fromtimestamp(ts, tz=timezone.utc))
-            _log(f"🔄 HTML fallback found: {ts} -> {converted}")
+            _log(f"🕒 Extracted creation time via data-utime: {ts} -> {converted}")
             return converted
         # 2) ISO in meta tags
         m = re.search(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)', html)
         if m:
             try:
                 dt = datetime.fromisoformat(m.group(1).replace('Z', '+00:00'))
-                return _format_iso_z(dt)
+                iso = _format_iso_z(dt)
+                _log(f"🕒 Extracted creation time via ISO meta: {m.group(1)} -> {iso}")
+                return iso
             except Exception:
                 pass
         # 3) data-testid with timestamp JSON blobs containing publish_time
@@ -277,7 +300,9 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
             ts = int(m.group(1))
             if ts > 10_000_000_000:
                 ts = ts // 1000
-            return _format_iso_z(datetime.fromtimestamp(ts, tz=timezone.utc))
+            iso = _format_iso_z(datetime.fromtimestamp(ts, tz=timezone.utc))
+            _log(f"🕒 Extracted creation time via publish_time: {ts} -> {iso}")
+            return iso
         # 4) Tooltip textual date, e.g., "Wednesday, July 16, 2025 at 8:01 PM"
         # Normalize spaces (handle narrow no-break spaces, etc.)
         normalized_html = html.replace('\u202f', ' ').replace('\xa0', ' ')
@@ -291,7 +316,9 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
                     local_tz = datetime.now().astimezone().tzinfo
                     naive = datetime.strptime(text, fmt)
                     local_dt = naive.replace(tzinfo=local_tz)
-                    return local_dt.isoformat()
+                    iso = local_dt.isoformat()
+                    _log(f"🕒 Extracted creation time via tooltip (US): '{text}' -> {iso}")
+                    return iso
                 except Exception:
                     continue
         # 5) European-style tooltip used earlier, e.g., "Thursday 27 October 2022 at 23:20"
@@ -302,7 +329,9 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
                 local_tz = datetime.now().astimezone().tzinfo
                 naive = datetime.strptime(text, '%A %d %B %Y at %H:%M')
                 local_dt = naive.replace(tzinfo=local_tz)
-                return local_dt.isoformat()
+                iso = local_dt.isoformat()
+                _log(f"🕒 Extracted creation time via tooltip (EU): '{text}' -> {iso}")
+                return iso
             except Exception:
                 pass
     except Exception:
