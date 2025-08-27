@@ -584,10 +584,11 @@ def fetch_posts(keyword, max_pages=30, page_size=5, delay_seconds=1.0, target_po
             for edge in edges:
                 post = _extract_post_from_edge(edge)
                 if post and post.get("message"):
-                    # Fallback created_time via HTML if missing
+                    # If creation_time is missing, default to current UTC time in ISO Z format
                     if not post.get("created_time"):
-                        _log(f"🔄 Trying HTML fallback for post {post['id']}")
-                        post["created_time"] = _fallback_fetch_created_time(session, post.get("permalink"))
+                        fallback_now = _format_iso_z(datetime.now(timezone.utc))
+                        _log(f"🕒 Using current time as fallback for post {post['id']}: {fallback_now}")
+                        post["created_time"] = fallback_now
                     # Ensure ISO Z format if it looks like epoch
                     if post.get("created_time") and isinstance(post["created_time"], (int, float, str)):
                         try:
