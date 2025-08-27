@@ -215,32 +215,45 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
         # Prefer HTML
         headers.pop('Content-Type', None)
         headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        # Try alternative hosts for better HTML
-        candidate_urls = [url]
+        # Step 1: Resolve to the final URL by following redirects
         try:
-            if 'web.facebook.com' in url:
-                candidate_urls.append(url.replace('web.facebook.com', 'www.facebook.com'))
-                candidate_urls.append(url.replace('web.facebook.com', 'm.facebook.com'))
-            elif 'www.facebook.com' in url:
-                candidate_urls.append(url.replace('www.facebook.com', 'm.facebook.com'))
-            elif 'm.facebook.com' in url:
-                candidate_urls.append(url.replace('m.facebook.com', 'www.facebook.com'))
+            first = session.get(url, headers=headers, allow_redirects=True, timeout=20)
+            final_url = first.url
         except Exception:
-            pass
-
-        html = ''
-        for test_url in candidate_urls:
-            try:
-                resp = session.get(test_url, headers=headers, timeout=20)
-                if not resp.encoding:
-                    resp.encoding = 'utf-8'
-                html = resp.text or ''
-                if html:
-                    break
-            except Exception:
-                continue
+            final_url = url
+        # Step 2: Re-fetch the final URL to get the definitive HTML
+        try:
+            resp = session.get(final_url, headers=headers, timeout=20)
+            if not resp.encoding:
+                resp.encoding = 'utf-8'
+            html = resp.text or ''
+        except Exception:
+            html = ''
         if not html:
-            return None
+            # Try alternative hosts for better HTML as a fallback
+            candidate_urls = [url]
+            try:
+                if 'web.facebook.com' in url:
+                    candidate_urls.append(url.replace('web.facebook.com', 'www.facebook.com'))
+                    candidate_urls.append(url.replace('web.facebook.com', 'm.facebook.com'))
+                elif 'www.facebook.com' in url:
+                    candidate_urls.append(url.replace('www.facebook.com', 'm.facebook.com'))
+                elif 'm.facebook.com' in url:
+                    candidate_urls.append(url.replace('m.facebook.com', 'www.facebook.com'))
+            except Exception:
+                pass
+            for test_url in candidate_urls:
+                try:
+                    resp2 = session.get(test_url, headers=headers, allow_redirects=True, timeout=20)
+                    if not resp2.encoding:
+                        resp2.encoding = 'utf-8'
+                    html = resp2.text or ''
+                    if html:
+                        break
+                except Exception:
+                    continue
+            if not html:
+                return None
         # 1) data-utime (unix seconds)
         m = re.search(r'data-utime="(\d{10,13})"', html)
         if m:
@@ -265,13 +278,31 @@ def _fallback_fetch_created_time(session: requests.Session, url: Optional[str]) 
             if ts > 10_000_000_000:
                 ts = ts // 1000
             return _format_iso_z(datetime.fromtimestamp(ts, tz=timezone.utc))
-        # 4) Tooltip textual date, e.g., "Thursday 27 October 2022 at 23:20"
-        m = re.search(r'([A-Za-z]+day\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}\s+at\s+\d{1,2}:\d{2})', html)
+        # 4) Tooltip textual date, e.g., "Wednesday, July 16, 2025 at 8:01 PM"
+        # Normalize spaces (handle narrow no-break spaces, etc.)
+        normalized_html = html.replace('\u202f', ' ').replace('\xa0', ' ')
+        # Try US-style tooltip with weekday, month name, day, year, 12h time with AM/PM
+        m = re.search(r'>\s*([A-Za-z]+day,?\s+[A-Za-z]+\s+\d{1,2},?\s+\d{4}\s+at\s+\d{1,2}:\d{2}\s*(?:AM|PM))\s*<', normalized_html)
+        if m:
+            text = m.group(1).strip()
+            for fmt in ('%A, %B %d, %Y at %I:%M %p', '%A %B %d, %Y at %I:%M %p', '%A, %B %d %Y at %I:%M %p'):
+                try:
+                    # Interpret as local time and return ISO string in local timezone
+                    local_tz = datetime.now().astimezone().tzinfo
+                    naive = datetime.strptime(text, fmt)
+                    local_dt = naive.replace(tzinfo=local_tz)
+                    return local_dt.isoformat()
+                except Exception:
+                    continue
+        # 5) European-style tooltip used earlier, e.g., "Thursday 27 October 2022 at 23:20"
+        m = re.search(r'([A-Za-z]+day\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}\s+at\s+\d{1,2}:\d{2})', normalized_html)
         if m:
             text = m.group(1)
             try:
-                dt = datetime.strptime(text, '%A %d %B %Y at %H:%M').replace(tzinfo=timezone.utc)
-                return _format_iso_z(dt)
+                local_tz = datetime.now().astimezone().tzinfo
+                naive = datetime.strptime(text, '%A %d %B %Y at %H:%M')
+                local_dt = naive.replace(tzinfo=local_tz)
+                return local_dt.isoformat()
             except Exception:
                 pass
     except Exception:
