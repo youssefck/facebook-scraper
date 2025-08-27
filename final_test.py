@@ -4,23 +4,38 @@ Final Test - Verify Facebook scraper works with a known popular page
 """
 
 import json
+import os
 import sys
 from datetime import datetime
 sys.path.insert(0, '/workspace')
 
-# Your cookies
-COOKIES = {
-    'datr': 'T5AiZ8l6hbmh1Qh3OTE-_vSf',
-    'sb': 'T5AiZ5UyDKV9wbgl_mBw6y2R', 
-    'ps_l': '1',
-    'ps_n': '1',
-    'dpr': '1.5',
-    'c_user': '100003651255170',
-    'xs': '23%3Akb3jl3EgjW-ZgQ%3A2%3A1756137972%3A-1%3A-1',
-    'fr': '1cGoymFMkpiDiRWmt.AWeCaO07KIrhu3-_A6UMmA0ayiK7iA62oRnN00-QKovpGuJy8Uc.Boqfzc..AAA.0.0.BorIn2.AWdH_UghHdnTh16TQ4il46lpePE',
-    'presence': 'C%7B%22t3%22%3A%5B%5D%2C%22utc3%22%3A1756138038008%2C%22v%22%3A1%7D',
-    'wd': '1920x326',
-}
+def load_cookies():
+    """Load cookies from env var JSON or a cookies file path.
+
+    Supported options (checked in order):
+    - FACEBOOK_COOKIES_JSON: JSON string for cookies dict
+    - COOKIES_FILE: filesystem path to a cookies file compatible with facebook_scraper
+    - cookies.txt in repo root (if present)
+    Returns either a dict (cookies) or a string path, or None if not available.
+    """
+    env_json = os.environ.get("FACEBOOK_COOKIES_JSON")
+    if env_json:
+        try:
+            return json.loads(env_json)
+        except Exception:
+            pass
+
+    cookies_file = os.environ.get("COOKIES_FILE")
+    if cookies_file and os.path.exists(cookies_file):
+        return cookies_file
+
+    default_path = os.path.join(os.getcwd(), "cookies.txt")
+    if os.path.exists(default_path):
+        return default_path
+
+    return None
+
+COOKIES = load_cookies()
 
 def test_known_page():
     """Test with a known popular page"""
