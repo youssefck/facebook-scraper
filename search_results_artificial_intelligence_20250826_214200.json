@@ -1,0 +1,90 @@
+{
+  "keyword": "artificial intelligence",
+  "total_found": 3,
+  "search_timestamp": "2025-08-26T21:42:00.188786",
+  "engagement_stats": {
+    "total_likes": 45,
+    "total_comments": 9,
+    "total_shares": 3,
+    "total_engagement": 57
+  },
+  "content_stats": {
+    "posts_with_images": 2,
+    "posts_with_videos": 1,
+    "public_posts": 3
+  },
+  "results": [
+    {
+      "post_id": "demo_post_1",
+      "text": "This is a demo post about artificial intelligence. This shows the format of results you would get when the scraper is fully functional.",
+      "author": "DemoUser1",
+      "author_id": "demo_user_1",
+      "post_url": "https://facebook.com/demo_post_1",
+      "timestamp": "2025-08-26T21:42:00.188735",
+      "likes": 10,
+      "comments": 2,
+      "shares": 0,
+      "is_public": true,
+      "has_image": true,
+      "has_video": true,
+      "factcheck": null,
+      "reactions": {
+        "like": 10,
+        "love": 0,
+        "haha": 0
+      },
+      "search_keyword": "artificial intelligence",
+      "image_count": 1,
+      "first_image": "https://demo.com/image_1.jpg",
+      "_note": "This is demo data - real scraper would return actual Facebook posts"
+    },
+    {
+      "post_id": "demo_post_2",
+      "text": "This is a demo post about artificial intelligence. This shows the format of results you would get when the scraper is fully functional.",
+      "author": "DemoUser2",
+      "author_id": "demo_user_2",
+      "post_url": "https://facebook.com/demo_post_2",
+      "timestamp": "2025-08-26T21:42:00.188771",
+      "likes": 15,
+      "comments": 3,
+      "shares": 1,
+      "is_public": true,
+      "has_image": false,
+      "has_video": false,
+      "factcheck": null,
+      "reactions": {
+        "like": 15,
+        "love": 1,
+        "haha": 0
+      },
+      "search_keyword": "artificial intelligence",
+      "image_count": 0,
+      "first_image": null,
+      "_note": "This is demo data - real scraper would return actual Facebook posts"
+    },
+    {
+      "post_id": "demo_post_3",
+      "text": "This is a demo post about artificial intelligence. This shows the format of results you would get when the scraper is fully functional.",
+      "author": "DemoUser3",
+      "author_id": "demo_user_3",
+      "post_url": "https://facebook.com/demo_post_3",
+      "timestamp": "2025-08-26T21:42:00.188775",
+      "likes": 20,
+      "comments": 4,
+      "shares": 2,
+      "is_public": true,
+      "has_image": true,
+      "has_video": false,
+      "factcheck": null,
+      "reactions": {
+        "like": 20,
+        "love": 2,
+        "haha": 0
+      },
+      "search_keyword": "artificial intelligence",
+      "image_count": 1,
+      "first_image": "https://demo.com/image_3.jpg",
+      "_note": "This is demo data - real scraper would return actual Facebook posts"
+    }
+  ]
+}

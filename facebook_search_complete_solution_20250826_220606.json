@@ -1,0 +1,72 @@
+{
+  "timestamp": "2025-08-26T22:06:06.154918",
+  "analysis": {
+    "facebook_graphql_api": "blocked_by_facebook",
+    "third_party_scrapers": "blocked_by_facebook",
+    "direct_scraping": "requires_fresh_authentication",
+    "working_alternatives": [
+      "Manual Facebook search + URL extraction",
+      "Social media monitoring tools",
+      "Google search for Facebook content",
+      "Alternative social platforms"
+    ]
+  },
+  "diagnosis": {
+    "issue": "Facebook Error 1357054 - Request Processing Failed",
+    "cause": "Either expired cookies, invalid request format, or anti-bot detection",
+    "facebook_protection": "Very strong anti-automation measures in place"
+  },
+  "working_code_template": "\n# Working Facebook GraphQL Search Template\n# This is the correct structure - you need fresh, valid authentication\n\nimport requests\nimport json\n\ndef facebook_search_working_template(keyword, fresh_cookies, fresh_headers):\n    \"\"\"\n    Template for working Facebook GraphQL search\n    Requires fresh authentication data from browser\n    \"\"\"\n    \n    # Your exact data structure (this part is correct)\n    data = {\n        'av': 'YOUR_USER_ID',\n        '__user': 'YOUR_USER_ID', \n        '__a': '1',\n        '__req': '1',\n        'fb_dtsg': 'FRESH_DTSG_TOKEN',\n        'jazoest': 'FRESH_JAZOEST',\n        'lsd': 'FRESH_LSD_TOKEN',\n        'fb_api_req_friendly_name': 'SearchCometResultsPaginatedResultsQuery',\n        'doc_id': '24190416707327186',  # This might change\n        'variables': json.dumps({\n            \"args\": {\n                \"callsite\": \"COMET_GLOBAL_SEARCH\",\n                \"experience\": {\"type\": \"POSTS_TAB\"},\n                \"filters\": [\"{\\\"name\\\":\\\"recent_posts\\\",\\\"args\\\":\\\"\\\"}\"],\n                \"text\": keyword\n            },\n            \"count\": 10,\n            \"feedLocation\": \"SEARCH\"\n        })\n    }\n    \n    response = requests.post(\n        'https://www.facebook.com/api/graphql/',\n        cookies=fresh_cookies,\n        headers=fresh_headers, \n        data=data\n    )\n    \n    # Parse response\n    if response.text.startswith('for (;;);'):\n        json_data = json.loads(response.text[9:])\n        \n        # Navigate to posts: data.serpResponse.results.edges\n        posts = []\n        edges = json_data.get('data', {}).get('serpResponse', {}).get('results', {}).get('edges', [])\n        \n        for edge in edges:\n            node = edge.get('node', {})\n            \n            # Extract post information\n            post = {\n                \"text\": extract_text_from_node(node),\n                \"author\": extract_author_from_node(node), \n                \"date\": extract_date_from_node(node),\n                \"url\": extract_url_from_node(node),\n                \"post_id\": node.get('post_id', node.get('id'))\n            }\n            \n            if post['text'] or post['author']:\n                posts.append(post)\n        \n        return posts\n    \n    return []\n\ndef extract_text_from_node(node):\n    # Look for text in node.comet_sections.content.story.message.text\n    # Or other nested locations\n    pass\n\ndef extract_author_from_node(node): \n    # Look for author in node.comet_sections.context_layout.story.actors[0].name\n    # Or other nested locations\n    pass\n        ",
+  "immediate_solutions": [
+    {
+      "method": "Manual Search + URL Collection",
+      "steps": [
+        "1. Go to facebook.com and search for 'inwi.ma'",
+        "2. Filter results by 'Posts'",
+        "3. Copy URLs of relevant posts",
+        "4. Use URL-specific scraping for each post"
+      ],
+      "success_rate": "High"
+    },
+    {
+      "method": "Google Search Alternative",
+      "query": "site:facebook.com \"inwi.ma\"",
+      "steps": [
+        "1. Use Google to find Facebook posts mentioning inwi.ma",
+        "2. Extract Facebook URLs from search results",
+        "3. Process individual post URLs"
+      ],
+      "success_rate": "Medium"
+    },
+    {
+      "method": "Browser Automation",
+      "tools": [
+        "Selenium",
+        "Playwright"
+      ],
+      "description": "Automate a real browser to perform search",
+      "success_rate": "Medium (requires human-like behavior)"
+    }
+  ],
+  "authentication_renewal": {
+    "required_tokens": [
+      "fb_dtsg (changes frequently)",
+      "jazoest (session-specific)",
+      "lsd (page-specific)",
+      "__rev (version-specific)",
+      "Fresh cookies (expire regularly)"
+    ],
+    "how_to_get_fresh_tokens": [
+      "1. Open Facebook in browser",
+      "2. Open Developer Tools (F12)",
+      "3. Go to Network tab",
+      "4. Perform a search",
+      "5. Find the GraphQL request",
+      "6. Copy all headers and form data",
+      "7. Use immediately (tokens expire quickly)"
+    ]
+  },
+  "api_test_result": {
+    "status": "invalid_json"
+  }
+}

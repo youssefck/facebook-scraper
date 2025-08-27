@@ -1,0 +1,17 @@
+{
+  "search_info": {
+    "keyword": "inwi.ma",
+    "pages_requested": 3,
+    "pages_processed": 2,
+    "total_posts_found": 0,
+    "search_timestamp": "2025-08-26T21:59:46.009421",
+    "method": "facebook_graphql_api"
+  },
+  "statistics": {
+    "posts_with_text": 0,
+    "posts_with_authors": 0,
+    "posts_with_urls": 0,
+    "posts_with_dates": 0
+  },
+  "posts": []
+}

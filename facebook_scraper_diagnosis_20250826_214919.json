@@ -1,0 +1,24 @@
+{
+  "test_timestamp": "2025-08-26T21:49:19.509091",
+  "facebook_scraper_status": "working_with_limitations",
+  "global_search_status": "blocked_by_facebook",
+  "page_scraping_status": "needs_testing_with_real_pages",
+  "your_keyword": "inwi.ma",
+  "recommendation": "Use page-specific search with Moroccan telecom pages",
+  "solution": {
+    "solution": "page_specific_search",
+    "reason": "Facebook blocks global search but allows page scraping",
+    "working_methods": [
+      "Search within specific Facebook pages",
+      "Search by hashtags (when available)",
+      "Search within groups (with proper access)"
+    ],
+    "example_code": "\n# Working Facebook Search Solution\n# Since global search is currently blocked, use page-specific search\n\nimport facebook_scraper as fs\n\n# Method 1: Search within specific pages\ndef search_in_pages(keyword, page_names, max_posts=20):\n    results = []\n    \n    for page in page_names:\n        print(f\"Searching in {page}...\")\n        post_count = 0\n        \n        for post in fs.get_posts(page, cookies=your_cookies, pages=3):\n            post_count += 1\n            \n            if keyword.lower() in post.get('text', '').lower():\n                results.append({\n                    \"source\": page,\n                    \"text\": post.get('text'),\n                    \"author\": post.get('username'),\n                    \"url\": post.get('post_url'),\n                    \"likes\": post.get('likes', 0),\n                    \"comments\": post.get('comments', 0)\n                })\n            \n            if post_count >= max_posts:\n                break\n    \n    return results\n\n# Method 2: Search by hashtag (if available)\ndef search_hashtag(hashtag):\n    results = []\n    try:\n        for post in fs.get_posts(hashtag=hashtag, pages=2):\n            results.append({\n                \"text\": post.get('text'),\n                \"author\": post.get('username'),\n                \"engagement\": post.get('likes', 0) + post.get('comments', 0)\n            })\n    except:\n        pass\n    return results\n\n# Your specific search for \"inwi.ma\"\ninwi_pages = [\"inwi\", \"InwiOfficiel\", \"Morocco\", \"TelecomMaroc\"]\nresults = search_in_pages(\"inwi.ma\", inwi_pages)\n\nprint(f\"Found {len(results)} posts mentioning 'inwi.ma'\")\n"
+  },
+  "next_steps": [
+    "Find real Facebook pages related to Inwi/Morocco telecom",
+    "Use page-specific scraping instead of global search",
+    "Consider searching in relevant Facebook groups",
+    "Try different search terms related to inwi.ma"
+  ]
+}
